@@ -1,0 +1,47 @@
+# --- Виртуальное окружение (Python / Venv) ---
+.venv/
+venv/
+ENV/
+env/
+dist/
+build/
+*.egg-info/
+
+# --- Кэш Python и компиляция ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# --- Настройки окружения и секреты (ВАЖНО!) ---
+.env
+.env.*
+!.env.example
+secrets.toml
+
+# --- Базы данных (локальные) ---
+*.db
+*.sqlite3
+*.sqlite
+
+# --- Логи приложения ---
+*.log
+logs/
+
+# --- Настройки редакторов кода (IDE) ---
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# --- Системные файлы ОС ---
+.DS_Store
+Thumbs.db
