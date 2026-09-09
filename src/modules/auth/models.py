@@ -1,15 +1,22 @@
 import uuid
 from datetime import datetime
 from typing import Optional
-from sqlalchemy import String, Boolean, Uuid, func, ForeignKey, Text
+from sqlalchemy import (
+    String, 
+    Boolean, 
+    Uuid, 
+    func, 
+    ForeignKey, 
+    Text,
+    UniqueConstraint
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from database import Base  # Импорт общего базового класса из src/database.py
+from src.database import Base  # Импорт общего базового класса из src/database.py
 
 class User(Base):
     __tablename__ = "users"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        Uuid, 
         primary_key=True, 
         default=uuid.uuid4
     )
@@ -17,10 +24,8 @@ class User(Base):
             String(100), 
             nullable=False
     )
-    email: Mapped[str] = mapped_column(
+    email: Mapped[Optional[str]] = mapped_column(
         String(150), 
-        unique=True, 
-        nullable=False, 
         index=True
     )
 
@@ -29,12 +34,20 @@ class User(Base):
         nullable=False
     )
     is_active: Mapped[bool] = mapped_column(
-        Boolean, 
         default=True
     )
     created_at: Mapped[datetime] = mapped_column(
         server_default=func.now(), 
         index=True
+    )
+    profile: Mapped["Profile"] = relationship(
+        "Profile", 
+        back_populates="user", 
+        cascade="all, delete-orphan"  # При удалении юзера удалится и его профиль
+    )
+
+    __table_args__ = (
+        UniqueConstraint("login", "hashed_password", name="uq_user_login_password"),
     )
 
 
@@ -43,11 +56,11 @@ class Profile(Base):
 
     # Первичным ключом профиля делаем ID пользователя (foreign key) — это идеальная практика для 1-к-1
     user_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid, 
         ForeignKey("users.id", ondelete="CASCADE"), 
         primary_key=True
     )
     
+    user: Mapped["User"] = relationship("User", back_populates="profile")
     # Личные данные пользователя (все поля делаем Optional, так как при регистрации они обычно пустые)
     first_name: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     last_name: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
@@ -60,5 +73,4 @@ class Profile(Base):
         onupdate=func.now()  # SQLAlchemy сама обновит время при любом изменении профиля
     )
 
-    # Обратная связь с пользователем
-    user: Mapped["User"] = relationship("User", back_populates="profile")
+   
