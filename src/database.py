@@ -6,7 +6,7 @@ from src.config import settings
 # 1. Создаем асинхронный движок для работы с БД
 # echo=settings.DEBUG выводит все SQL-запросы в консоль, когда в .env включен DEBUG=True
 engine = create_async_engine(
-    settings.DATABASE_URL,
+    settings.db.db_url_async,
     echo=settings.DEBUG,
 )
 
