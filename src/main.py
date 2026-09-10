@@ -6,6 +6,7 @@ from src.config import settings
 from src.database import get_async_session
 # Импортируем роутеры из наших независимых модулей
 from src.modules.auth.router import router as auth_router
+from src.modules.admin.router import router as admin_router
 
 app = FastAPI(
     title="Shade Art API",
@@ -14,6 +15,7 @@ app = FastAPI(
 
 # Подключаем роутеры наших независимых модулей (псевдомодулей)
 app.include_router(auth_router)
+app.include_router(admin_router)
 
 @app.get("/")
 async def root():

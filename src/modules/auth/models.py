@@ -2,7 +2,8 @@ import uuid
 from datetime import datetime
 from typing import Optional
 from sqlalchemy import (
-    String, 
+    String,
+    Enum, 
     Boolean, 
     Uuid, 
     func, 
@@ -12,6 +13,14 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.database import Base  # Импорт общего базового класса из src/database.py
+from enum import Enum as PythonEnum
+
+
+class UserRole(str, PythonEnum):
+    """Статические роли пользователей"""
+    USER = "user"
+    ADMIN = "admin"
+    MODERATOR = "moderator"
 
 class User(Base):
     __tablename__ = "users"
@@ -24,11 +33,11 @@ class User(Base):
             String(100), 
             nullable=False
     )
-    email: Mapped[Optional[str]] = mapped_column(
-        String(150), 
-        index=True
+    role: Mapped[UserRole] = mapped_column(
+        Enum(UserRole, name="user_role_enum", create_type=True),
+        default=UserRole.USER,
+        nullable=False,
     )
-
     hashed_password: Mapped[str] = mapped_column(
         String(255), 
         nullable=False
@@ -62,10 +71,26 @@ class Profile(Base):
     
     user: Mapped["User"] = relationship("User", back_populates="profile")
     # Личные данные пользователя (все поля делаем Optional, так как при регистрации они обычно пустые)
-    first_name: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    last_name: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    avatar_url: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    bio: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # Text для длинного описания "о себе"
+    first_name: Mapped[Optional[str]] = mapped_column(
+            String(50), 
+            nullable=True
+    )
+    last_name: Mapped[Optional[str]] = mapped_column(
+            String(50), 
+            nullable=True
+    )
+    email: Mapped[Optional[str]] = mapped_column(
+            String(150), 
+            index=True
+    )
+    avatar_url: Mapped[Optional[str]] = mapped_column(
+            String(255), 
+            nullable=True
+    )
+    bio: Mapped[Optional[str]] = mapped_column(
+        Text, 
+        nullable=True
+    )  # Text для длинного описания "о себе"
     
     # Системное поле: когда профиль обновлялся в последний раз
     updated_at: Mapped[datetime] = mapped_column(

@@ -8,7 +8,8 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 from alembic import context
-
+from src.config import settings
+import alembic_postgresql_enum
 
 config = context.config
 
@@ -56,10 +57,15 @@ async def run_async_migrations() -> None:
     and associate a connection with the context.
 
     """
-
+    # 1. Вместо чтения всего файла alembic.ini, создаем чистый словарь только для SQLAlchemy
+    connectable_options = {
+        "url": settings.db.db_url_async
+    }
+    
+    # 2. Передаем этот чистый словарь в функцию создания асинхронного движка
     connectable = async_engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
+        connectable_options,
+        prefix="",  # Префикс пустой, так как у нас в словаре только точечный "url"
         poolclass=pool.NullPool,
     )
 

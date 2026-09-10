@@ -21,10 +21,14 @@ class SettingsDB(BaseModel):
     def db_url_async(self) -> str:
         return f"postgresql+asyncpg://{self.USER}:{self.PASSWORD}@{self.HOST}:{self.PORT}/{self.NAME}"
 
+class SettingsJWT(BaseModel):
+    SECRET_KEY: str
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
 class Settings(BaseSettings):
     db:SettingsDB
-
+    jwt: SettingsJWT
     LIMIT_ON_PAGE: int = Field(
             default=20, 
             description="Количество элементов на странице по умолчанию"
