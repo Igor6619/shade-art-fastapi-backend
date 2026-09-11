@@ -18,6 +18,8 @@ from enum import Enum as PythonEnum
 
 class UserRole(str, PythonEnum):
     """Статические роли пользователей"""
+
+    GUEST = "guest" 
     USER = "user"
     ADMIN = "admin"
     MODERATOR = "moderator"

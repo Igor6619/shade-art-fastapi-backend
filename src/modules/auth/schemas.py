@@ -1,5 +1,5 @@
 from typing import Optional
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, ConfigDict
 from datetime import datetime
 from uuid import UUID
 from src.modules.auth.models import UserRole
@@ -37,8 +37,7 @@ class UserResponseSchema(BaseModel):
     # Вкладываем схему профиля. При регистрации здесь вернутся null-поля и дата создания
     profile: ProfileResponseSchema
 
-    class Config:
-        from_attributes = True  # Позволяет автоматически мапить объекты SQLAlchemy (User) в Pydantic
+    model_config = ConfigDict(from_attributes=True)  # Позволяет автоматически мапить объекты SQLAlchemy (User) в Pydantic
 
 
 class UserCreateSchema(BaseModel):
@@ -78,12 +77,17 @@ class UserLoginSchema(BaseModel):
 class UserLoginResponseSchema(BaseModel):
     '''Схема ответа на попытку входа'''
 
+
+    user: UserResponseSchema 
     status:bool = Field(
         description="Статус входа на сайт"
     )
     redirect_to_url:str = Field(
         description="Перенаправляем"
     )
+
+    model_config = ConfigDict(from_attributes=True)
+
 
 from pydantic import BaseModel, Field
 

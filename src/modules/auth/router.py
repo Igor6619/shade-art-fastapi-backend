@@ -31,6 +31,7 @@ from src.modules.auth.utils import (
     get_current_user
 )
 from uuid import UUID
+from typing import Optional
 
 # Инициализируем изолированный роутер модуля
 router = APIRouter(
@@ -100,7 +101,7 @@ async def register_user(
 async def login_user(
     login_data: UserLoginSchema,
     response: Response,  # <--- Критически важно для работы с куками!
-    next_url: str | None = Query(None, alias="next"),
+    next_url: Optional[str] = Query(default=None, alias="next"),
     db: AsyncSession = Depends(get_async_session)
 ):
     # 1. Ищем пользователя по логину и СРАЗУ подгружаем профиль через joinedload
@@ -111,7 +112,7 @@ async def login_user(
     )
     result = await db.execute(query)
     user = result.scalar_one_or_none()
-
+    print('user: ', user)
     # 2. Если пользователь не найден или пароль неверный — выдаем общую ошибку
     # (Из соображений безопасности не говорим конкретно "неверный пароль" или "нет юзера")
     if not user or not verify_password(login_data.password, user.hashed_password):
@@ -135,6 +136,7 @@ async def login_user(
     redirect_to = next_url if next_url else "/"
     logining_status = True
     return {
+        "user": user,
         "status": logining_status,
         "redirect_to_url": redirect_to
     }

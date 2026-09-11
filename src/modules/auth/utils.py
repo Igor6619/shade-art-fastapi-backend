@@ -39,7 +39,7 @@ def create_access_token(user: User) -> str:
     # и не является ли поле пустым
     first_name = None
     if "profile" in user.__dict__ and user.profile:
-        first_name = user.profile.first_name
+        first_name = user.profile.first_name if user.profile.first_name else user.login
 
     # 1. Готовим Payload (данные внутри токена)
     payload = {
