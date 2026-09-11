@@ -38,6 +38,11 @@ class Settings(BaseSettings):
         default=False
     )
 
+    PORT: int = Field(
+        default=8000
+    )
+
+
     model_config = SettingsConfigDict(
         env_file=ENV_FILE_PATH, 
         env_file_encoding="utf-8",

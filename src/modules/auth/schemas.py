@@ -53,7 +53,7 @@ class UserCreateSchema(BaseModel):
 
     password: str = Field(
         ...,
-        min_length=6,
+        min_length=5,
         max_length=100,
         description="Пароль пользователя (минимум 6 символов)"
     )
