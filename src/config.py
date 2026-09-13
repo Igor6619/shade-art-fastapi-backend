@@ -21,23 +21,27 @@ class SettingsDB(BaseModel):
     def db_url_async(self) -> str:
         return f"postgresql+asyncpg://{self.USER}:{self.PASSWORD}@{self.HOST}:{self.PORT}/{self.NAME}"
 
-class SettingsJWT(BaseModel):
-    SECRET_KEY: str
-    ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+# class SettingsJWT(BaseModel):
+#     SECRET_KEY: str
+#     ALGORITHM: str = "HS256"
+#     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
+class SettingsSESSION(BaseModel):
+    '''Настройки сессии'''
+
+    SESSION_MAX_AGE_DAYS: int
+    NAME_COOKIE: str
+    
 class Settings(BaseSettings):
-    db:SettingsDB
-    jwt: SettingsJWT
+    db: SettingsDB
+    session: SettingsSESSION
     LIMIT_ON_PAGE: int = Field(
             default=20, 
             description="Количество элементов на странице по умолчанию"
     )
-
     DEBUG: bool = Field(
         default=False
     )
-
     PORT: int = Field(
         default=8000
     )

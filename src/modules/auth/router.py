@@ -4,7 +4,8 @@ from fastapi import (
     HTTPException, 
     status, 
     Response, 
-    Query
+    Query,
+    Cookie
 )
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import select 
@@ -18,20 +19,22 @@ from src.modules.auth.schemas import (
     UserCreateSchema,
     UserLoginSchema,
     UserLoginResponseSchema,
-    UserLogoutResponseSchema
+    UserLogoutResponseSchema,
+    GetMeResponseSchema
 )
 from src.modules.auth.models import (
     User, 
-    Profile
+    Profile,
+    UserSession
 )
 from src.modules.auth.utils import (
     hash_password,
     verify_password,
-    create_access_token,
     get_current_user
 )
 from uuid import UUID
-from typing import Optional
+from typing import Optional, Annotated
+from datetime import datetime, timedelta 
 
 # Инициализируем изолированный роутер модуля
 router = APIRouter(
@@ -95,13 +98,13 @@ async def register_user(
     return user_with_profile
 
 @router.post(
-        "/login",
-        response_model=UserLoginResponseSchema,
+    "/login",
+    response_model=UserLoginResponseSchema,
 )
 async def login_user(
     login_data: UserLoginSchema,
-    response: Response,  # <--- Критически важно для работы с куками!
-    next_url: Optional[str] = Query(default=None, alias="next"),
+    response: Response,
+    next_url: Annotated[str | None, Query(alias="next")] = None,
     db: AsyncSession = Depends(get_async_session)
 ):
     # 1. Ищем пользователя по логину и СРАЗУ подгружаем профиль через joinedload
@@ -112,35 +115,54 @@ async def login_user(
     )
     result = await db.execute(query)
     user = result.scalar_one_or_none()
-    print('user: ', user)
+
     # 2. Если пользователь не найден или пароль неверный — выдаем общую ошибку
-    # (Из соображений безопасности не говорим конкретно "неверный пароль" или "нет юзера")
     if not user or not verify_password(login_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Неверный логин или пароль",
         )
 
-    # 3. Генерируем токен (он автоматически заберет user.role и user.profile.first_name)
-    token = create_access_token(user)
-
-    # 4. Записываем токен в защищенную HttpOnly куку
-    response.set_cookie(
-        key="access_token",                     # Название куки
-        value=token,                            # Сам JWT-токен
-        httponly=True,                          # Запрещает JavaScript читать куку (защита от XSS)
-        # secure=True,                            # Передача только по HTTPS (для локалки FastAPI делает поблажку)
-        samesite="lax",                         # Защита от CSRF-атак
-        max_age=settings.jwt.ACCESS_TOKEN_EXPIRE_MINUTES * 60, # Время жизни куки в секундах
+    # 3. ФОРМИРУЕМ СЕССИЮ В БАЗЕ ДАННЫХ
+    # Вычисляем время окончания действия сессии
+    expires_at = datetime.now() + timedelta(days=settings.session.SESSION_MAX_AGE_DAYS)
+    
+    # Собираем payload для JSONB, включая user_id, роль и имя
+    payload = {
+        "user_id": str(user.id),
+        "role": user.role,
+        "first_name": user.profile.first_name if user.profile else None
+    }
+    
+    # Создаем объект сессии (session_id сгенерируется автоматически как UUID)
+    new_session = UserSession(
+        user_id=user.id,
+        payload=payload,
+        expires_at=expires_at
     )
+    
+    db.add(new_session)
+    await db.commit()
+    await db.refresh(new_session)  # Обновляем, чтобы прочитать сгенерированный UUID из БД
+
+    # 4. Записываем UUID сессии в защищенную HttpOnly куку в виде строки [1]
+    response.set_cookie(
+        key=settings.session.NAME_COOKIE,                      # Название куки
+        value=str(new_session.session_id),                      # Передаем UUID как строку [1]
+        httponly=True,                                          # Защита от XSS
+        # secure=True,                                            # Ставьте True (требует HTTPS) [1]
+        samesite="lax",                                         # Защита от CSRF
+        max_age=settings.session.SESSION_MAX_AGE_DAYS * 24 * 60 * 60,            # Срок жизни куки в секундах
+    )
+
     redirect_to = next_url if next_url else "/"
     logining_status = True
+    
     return {
         "user": user,
         "status": logining_status,
         "redirect_to_url": redirect_to
     }
-    
 
 @router.patch("/profile/{user_id}")
 async def update_profile(
@@ -198,3 +220,16 @@ async def logout_user(
         "redirect_to_url": "/auth/login"  # После логаута отправляем пользователя на страницу входа
     }
 
+@router.get("/api/me", response_model=GetMeResponseSchema)
+async def get_me(
+        session: Optional[str] = Cookie(None, alias="session_id"),# id session в заголовке Cookie
+        db: AsyncSession = Depends(get_async_session)
+    ): 
+    if not session:
+        raise HTTPException(status_code=401, detail="Не авторизован")
+    session_uuid = UUID(session)
+    # 1. Здесь ваша логика проверки session_id в базе данных или Redis
+    user_session = await db.get(UserSession, session_uuid)
+    
+    
+    return user_session

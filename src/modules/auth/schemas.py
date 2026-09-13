@@ -1,5 +1,5 @@
-from typing import Optional
-from pydantic import BaseModel, EmailStr, Field, field_validator, ConfigDict
+from typing import Optional, Any
+from pydantic import BaseModel, EmailStr, Field, field_validator, ConfigDict, model_validator
 from datetime import datetime
 from uuid import UUID
 from src.modules.auth.models import UserRole
@@ -101,3 +101,24 @@ class UserLogoutResponseSchema(BaseModel):
         ..., 
         description="URL, на который фронтенд должен перенаправить пользователя после выхода."
     )
+
+class GetMeResponseSchema(BaseModel):
+    '''Схема пользователя из сессии которая хранится на сервере'''
+
+    user_id: str
+    role: str = "user"
+    first_name: str = "Пользователь"
+
+    @model_validator(mode="before")
+    @classmethod
+    def extract_from_jsonb_payload(cls, data: Any) -> Any:
+        if hasattr(data, "payload"):
+            payload = data.payload or {}
+        raw_first_name = payload.get("first_name")
+        first_name_value = raw_first_name if raw_first_name is not None else "Пользователь"
+        return {
+            # Приводим к строке, так как в Next.js String(user.user_id)
+            "user_id": str(payload.get("user_id", "")), 
+            "role": payload.get("role", "user"),
+            "first_name": first_name_value,
+        }

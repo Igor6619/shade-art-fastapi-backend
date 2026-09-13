@@ -1,16 +1,18 @@
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Any
 from sqlalchemy import (
     String,
     Enum, 
     Boolean, 
-    Uuid, 
-    func, 
+    UUID, 
+    func,
+    DateTime, 
     ForeignKey, 
     Text,
     UniqueConstraint
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.database import Base  # Импорт общего базового класса из src/database.py
 from enum import Enum as PythonEnum
@@ -100,4 +102,33 @@ class Profile(Base):
         onupdate=func.now()  # SQLAlchemy сама обновит время при любом изменении профиля
     )
 
-   
+class UserSession(Base):
+    __tablename__ = "user_sessions"
+
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        primary_key=True, 
+        default=uuid.uuid4
+    )
+    
+    # ИСПРАВЛЕНО: Mapped[uuid.UUID] теперь соответствует типу UUID в БД
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), 
+        index=True, 
+        nullable=False
+    )
+    
+    payload: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, 
+        nullable=False
+    )
+    
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, 
+        server_default=func.now(), 
+        nullable=False
+    )
+    
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime, 
+        nullable=False
+    )

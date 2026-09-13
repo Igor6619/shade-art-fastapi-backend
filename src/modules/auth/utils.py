@@ -1,14 +1,26 @@
 import jwt
 import bcrypt
+import uuid
 from datetime import datetime, timedelta, timezone
 from src.config import settings
 from src.database import get_async_session
-from src.modules.auth.models import User
-from fastapi import Request, Depends, HTTPException, status
+from src.modules.auth.models import (
+    User, 
+    UserSession
+)
+from fastapi import (
+    Request, 
+    Depends, 
+    HTTPException, 
+    status,
+    Cookie
+)
 from typing import Annotated
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
+from src.config import settings
+from typing import Optional, Any
 
 
 def hash_password(password: str) -> str:
@@ -29,92 +41,108 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         hashed_password.encode('utf-8')
     )
 
-
-def create_access_token(user: User) -> str:
+async def create_user_session(
+    db: AsyncSession, 
+    user_id: uuid.UUID, 
+    role: str, 
+    first_name: str
+) -> uuid.UUID:
     """
-    Генерирует JWT access-токен для пользователя.
-    В Payload зашиваем ID, логин, роль и имя из профиля.
+    Создает сессию в PostgreSQL.
+    Возвращает session_id (UUID), который нужно записать в Cookie.
     """
-    # Безопасно получаем first_name, проверяя, подгружена ли связь 'profile'
-    # и не является ли поле пустым
-    first_name = None
-    if "profile" in user.__dict__ and user.profile:
-        first_name = user.profile.first_name if user.profile.first_name else user.login
-
-    # 1. Готовим Payload (данные внутри токена)
+    # Вычисляем время окончания сессии (timezone-naive для совпадения с DateTime)
+    expires_at = datetime.now() + timedelta(days=settings.session.SESSION_MAX_AGE_DAYS)
+    
+    # Формируем payload, дублируя user_id в виде строки для удобства чтения во фронтенде
     payload = {
-        "user_id": str(user.id),       # ID пользователя
-        "role": user.role,         # Роль (user/admin)
-        "first_name": first_name   # <--- НАШЕ НОВОЕ ПОЛЕ
+        "user_id": str(user_id),
+        "role": role,
+        "first_name": first_name
     }
     
-    # 2. Рассчитываем время жизни токена
-    expire = datetime.now(timezone.utc) + timedelta(
-        minutes=settings.jwt.ACCESS_TOKEN_EXPIRE_MINUTES
-    )
-    payload.update({"exp": expire})
-    
-    # 3. Подписываем Payload секретным ключом
-    encoded_jwt = jwt.encode(
-        payload, 
-        settings.jwt.SECRET_KEY, 
-        algorithm=settings.jwt.ALGORITHM
+    # Создаем объект сессии. session_id сгенерируется автоматически через default=uuid.uuid4
+    db_session = UserSession(
+        user_id=user_id,
+        payload=payload,
+        expires_at=expires_at
     )
     
-    return encoded_jwt
+    db.add(db_session)
+    await db.commit()
+    await db.refresh(db_session)  # Обновляем объект, чтобы получить сгенерированный session_id
+    
+    return db_session.session_id
 
-def get_token_from_cookie(request: Request) -> str:
-    """
-    Достает токен из HttpOnly куки.
-    Если куки нет — прерывает запрос с ошибкой 401.
-    """
 
-    token = request.cookies.get("access_token")
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Вы не авторизованы (отсутствует токен)",
-        )
-    return token
+async def get_session_payload(db: AsyncSession, session_id: uuid.UUID) -> Optional[dict[str, Any]]:
+    """
+    Проверяет существование и срок годности сессии.
+    Возвращает dict с данными пользователя (payload) или None.
+    """
+    now = datetime.now()
+    
+    # Строим запрос: ищем сессию по ID, которая еще не просрочена
+    query = select(UserSession).where(
+        UserSession.session_id == session_id,
+        UserSession.expires_at > now
+    )
+    
+    result = await db.execute(query)
+    session_record = result.scalar_one_or_none()
+    
+    if not session_record:
+        return None
+        
+    return session_record.payload
 
 async def get_current_user(
-    token: Annotated[str, Depends(get_token_from_cookie)],
-    db: Annotated[AsyncSession, Depends(get_async_session)]
+    # 1. FastAPI автоматически достает UUID сессии из куки "session"
+    session_id: Annotated[str | None, Cookie(alias=settings.session.NAME_COOKIE)] = None,
+    db: Annotated[AsyncSession, Depends(get_async_session)] = None
 ) -> User:
     """
-    Основная зависимость: проверяет подпись JWT и возвращает объект User из БД.
+    Основная зависимость: проверяет сессию в PostgreSQL по куке и возвращает объект User из БД.
     """
-    try:
-        # 1. Декодируем токен. PyJWT автоматически проверит время "exp"!
-        payload = jwt.decode(
-            token,
-            settings.jwt.SECRET_KEY,
-            algorithms=[settings.jwt.ALGORITHM]
+    # Если кука вообще отсутствует в запросе
+    if not session_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Вы не авторизованы (отсутствует кука сессии)",
         )
         
-        # 2. Достаем ID пользователя из стандартного поля "sub"
-        user_id: str = payload.get("user_id")
-        if user_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Невалидный токен (отсутствует user_id)",
-            )
-            
-    except jwt.ExpiredSignatureError:
+    try:
+        # Конвертируем строковую куку в объект uuid.UUID
+        session_uuid = uuid.UUID(session_id)
+    except ValueError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Сессия истекла, войдите заново",
-        )
-    except jwt.PyJWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Невалидный или поврежденный токен",
+            detail="Невалидный формат идентификатора сессии",
         )
 
-    # 3. Ищем пользователя в базе данных и сразу подтягиваем его профиль
-    query = select(User).where(User.id == user_id).options(joinedload(User.profile))
-    result = await db.execute(query)
-    user = result.scalar_one_or_none()
+    # 2. Ищем активную и непросроченную сессию в базе данных
+    now = datetime.now()
+    session_query = select(UserSession).where(
+        UserSession.session_id == session_uuid,
+        UserSession.expires_at > now
+    )
+    session_result = await db.execute(session_query)
+    current_session = session_result.scalar_one_or_none()
+
+    if not current_session:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Сессия истекла или не существует, войдите заново",
+        )
+
+    # 3. Ищем пользователя по user_id из сессии и сразу подтягиваем его профиль
+    user_query = (
+        select(User)
+        .where(User.id == current_session.user_id)
+        .options(joinedload(User.profile))
+    )
+    user_result = await db.execute(user_query)
+    user = user_result.scalar_one_or_none()
 
     if not user:
         raise HTTPException(
