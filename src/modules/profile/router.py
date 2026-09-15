@@ -48,13 +48,12 @@ async def get_profile(
     # 1. Получаем ВСЕХ пользователей с таким логином
     print('user_id: ', user_id)
     profile = await db.get(Profile, user_id) # Получаем профиль пользователя User
-    print('profile: ', profile)
     if profile is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Профиль для данного пользователя не найден"
         )
-    print ('profile: ', profile)
+    
     return profile
 
 @router.patch("/{user_id}")
