@@ -8,13 +8,12 @@ from fastapi import (
     Cookie
 )
 from pydantic import BaseModel, EmailStr
-from sqlalchemy import select 
+from sqlalchemy import select, delete 
 from sqlalchemy.orm import joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.config import settings
 from src.database import get_async_session
 from src.modules.auth.schemas import (
-    ProfileUpdateSchema,
     UserResponseSchema,
     UserCreateSchema,
     UserLoginSchema,
@@ -24,13 +23,19 @@ from src.modules.auth.schemas import (
 )
 from src.modules.auth.models import (
     User, 
-    Profile,
     UserSession
 )
 from src.modules.auth.utils import (
     hash_password,
     verify_password,
     get_current_user
+)
+from models import (
+     Profile,
+)
+from src.modules.profile.schemas import (
+    ProfileUpdateSchema,
+
 )
 from uuid import UUID
 from typing import Optional, Annotated
@@ -164,35 +169,7 @@ async def login_user(
         "redirect_to_url": redirect_to
     }
 
-@router.patch("/profile/{user_id}")
-async def update_profile(
-        user_id: UUID,
-        profile_data: ProfileUpdateSchema,
-        session: AsyncSession = Depends(get_async_session)
-    ):
-        """
-        Эндпоинт для обновления данных профиля.
-        Фронтенд вызовет его, когда пользователь заполнит форму редактирования.
-        """
-        # Ищем профиль по user_id
-        query = select(Profile).where(Profile.user_id == user_id)
-        result = await session.execute(query)
-        profile = result.scalar_one_or_none()
 
-        if not profile:
-            raise HTTPException(status_code=404, detail="Профиль не найден")
-
-        # Превращаем пришедшие данные в словарь, исключая те, которые пользователь не заполнил (None)
-        update_data = profile_data.model_dump(exclude_unset=True)
-
-        # Обновляем поля профиля динамически
-        for key, value in update_data.items():
-            setattr(profile, key, value)
-
-        await session.commit()
-        await session.refresh(profile)
-
-        return {"status": "success", "message": "Профиль успешно обновлен"}
 
 @router.post(
     "/logout",
@@ -201,14 +178,28 @@ async def update_profile(
 )
 async def logout_user(
     response: Response,
+    session_id: Annotated[UUID | None, Cookie(alias=settings.session.NAME_COOKIE)] = None,
+    db: AsyncSession = Depends(get_async_session),
 ):
     """
     Выход из системы.
-    Удаляет HttpOnly куку access_token и возвращает URL для редиректа.
+    Удаляет HttpOnly куку session_id и удаляем запись о сессии из базы.
     """
-    # 1. Удаляем куку из браузера пользователя
+    if not session_id:
+        return {
+            "status": True,
+            "redirect_to_url": "/"
+        }
+
+    # 1. Удаляем запись о сессии из базы
+    query = delete(UserSession).where(UserSession.session_id == session_id)
+    await db.execute(query)
+    # Применяем изменения в базе данных
+    await db.commit()
+    
+    # 2. Удаляем куку из браузера пользователя
     response.delete_cookie(
-        key="access_token",
+        key=settings.session.NAME_COOKIE,
         httponly=True,
         samesite="lax"
         # secure=True  # Раскомментируйте на продакшене, если при логине использовали secure=True
@@ -217,8 +208,9 @@ async def logout_user(
     # 2. Формируем ответ для фронтенда Next.js
     return {
         "status": True,
-        "redirect_to_url": "/auth/login"  # После логаута отправляем пользователя на страницу входа
+        "redirect_to_url": "/"  # После логаута отправляем пользователя на страницу входа
     }
+
 
 @router.get("/api/me", response_model=GetMeResponseSchema)
 async def get_me(

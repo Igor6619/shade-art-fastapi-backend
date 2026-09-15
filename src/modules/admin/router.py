@@ -4,7 +4,7 @@ from src.modules.auth.utils import(
     RoleChecker,
     get_current_user
 ) 
-from src.modules.auth.models import User
+from models import User 
 
 
 # Инициализируем роутер админки

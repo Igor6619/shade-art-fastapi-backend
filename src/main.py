@@ -6,6 +6,7 @@ from src.config import settings
 from src.database import get_async_session
 # Импортируем роутеры из наших независимых модулей
 from src.modules.auth.router import router as auth_router
+from src.modules.profile.router import router as profile_router
 from src.modules.admin.router import router as admin_router
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -29,6 +30,7 @@ app.add_middleware(
 )
 # Подключаем роутеры наших независимых модулей (псевдомодулей)
 app.include_router(auth_router)
+app.include_router(profile_router)
 app.include_router(admin_router)
 
 @app.get("/")
